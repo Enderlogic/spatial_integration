@@ -66,7 +66,7 @@ def pse_srt_from_scrna(adata_scrna, spot_num=10000, lam=5, max_cell_types_in_spo
 
 
 def ST_preprocess(ST_exp, filter=True, normalize=True, log=True, highly_variable_genes=True, scale=True,
-                  n_top_genes=None, use_pca=True, n_comps=30, pca_model=None):
+                  n_top_genes=None, use_pca=False, n_comps=30, pca_model=None):
     adata = ST_exp.copy()
 
     if filter:

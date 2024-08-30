@@ -1,15 +1,16 @@
+from datetime import datetime
+
 import torch
 from torch import tensor
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 import torch.nn.functional as F
 from .model import Encoder_overall
 from .preprocess import adjacent_matrix_preprocessing
 
 
-class Train_SpatialGlue:
-    def __init__(self, data, datatype='SPOTS', device=torch.device('cpu'), random_seed=2022, learning_rate=0.0001,
-                 weight_decay=0.00, epochs=600, dim_input=3000, dim_output=64, dropout=.05, weight_factors=[1, 5, 1, 1]):
+class spatial_integration_train:
+    def __init__(self, data, datatype='SPOTS', random_seed=2022, learning_rate=0.0001, weight_decay=0.00, epochs=600,
+                 dim_input=3000, dim_output=64, dropout=.05, weight_factors=[1, 5, 1, 1, 0, 0, 0]):
         '''\
 
         Parameters
@@ -43,7 +44,7 @@ class Train_SpatialGlue:
         '''
         self.data = data.copy()
         self.datatype = datatype
-        self.device = device
+        self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
         self.random_seed = random_seed
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
@@ -81,18 +82,19 @@ class Train_SpatialGlue:
         else:
             self.num_cell_type = 0
             self.adata_pse_srt = None
+
         if self.datatype == 'SPOTS':
             self.epochs = 600
-            self.weight_factors = [1, 5, 1, 1]
+            self.weight_factors = [1, 5, 1, 1, 0, 0, 0]
         elif self.datatype == 'Stereo-CITE-seq':
             self.epochs = 1500
-            self.weight_factors = [1, 10, 1, 10]
+            self.weight_factors = [1, 10, 1, 10, 0, 0, 0]
         elif self.datatype == '10x':
             self.epochs = 200
-            self.weight_factors = [1, 5, 1, 10]
+            self.weight_factors = [1, 5, 1, 10, 0, 0, 0]
         elif self.datatype == 'Spatial-epigenome-transcriptome':
             self.epochs = 1600
-            self.weight_factors = [1, 5, 1, 1]
+            self.weight_factors = [1, 5, 1, 1, 0, 0, 0]
 
     def train(self):
         self.model = Encoder_overall(self.dim_input1, self.dim_output1, self.dim_input2, self.dim_output2,
@@ -101,6 +103,7 @@ class Train_SpatialGlue:
         self.optimizer = torch.optim.Adam(self.model.parameters(), self.learning_rate, weight_decay=self.weight_decay)
         self.model.train()
         for epoch in range(self.epochs):
+            # original training process in spatialglue
             self.model.train()
             self.optimizer.zero_grad()
             results = self.model(self.features_omics1, self.features_omics2, self.adj_spatial_omics1,
@@ -117,7 +120,7 @@ class Train_SpatialGlue:
             if self.adata_pse_srt is not None:
                 # discrimination loss
                 dis = self.model.dis(results['emb_latent_omics1'])
-                self.loss_dis_omics1 = F.cross_entropy(dis, tensor([1] * self.n_cell_omics1))
+                self.loss_dis_omics1 = F.cross_entropy(dis, tensor([1] * self.n_cell_omics1, device=self.device))
             else:
                 self.loss_dis_omics1 = tensor(0., device=self.device)
             loss = self.weight_factors[0] * self.loss_recon_omics1 + self.weight_factors[1] * self.loss_recon_omics2 + \
@@ -127,6 +130,7 @@ class Train_SpatialGlue:
             loss.backward()
             self.optimizer.step()
 
+            # additional training process to integrate information from scRNA-seq data into model
             if self.adata_pse_srt is not None:
                 loss_recon_pse_srt = 0
                 loss_clas = 0
@@ -147,8 +151,9 @@ class Train_SpatialGlue:
 
                     # discrimination loss
                     dis = self.model.dis(emb_latent_pse_srt)
-                    self.loss_dis_pse_srt = F.cross_entropy(dis, tensor([0] * feat.shape[0]))
-                    loss = self.loss_recon_pse_srt + self.loss_clas + self.loss_dis_pse_srt
+                    self.loss_dis_pse_srt = F.cross_entropy(dis, tensor([0] * feat.shape[0], device=self.device))
+                    loss = self.weight_factors[4] * self.loss_recon_pse_srt + self.weight_factors[5] * self.loss_clas + \
+                           self.weight_factors[6] * self.loss_dis_pse_srt
                     loss.backward()
                     self.optimizer.step()
                     loss_recon_pse_srt += self.loss_recon_pse_srt
@@ -158,7 +163,8 @@ class Train_SpatialGlue:
                 print(
                     f"Epoch: {epoch}, recon_omics1: {self.loss_recon_omics1:.4f}, recon_omics2: {self.loss_recon_omics2:.4f}, corr_omics1: {self.loss_corr_omics1:.4f}, corr_omics2: {self.loss_corr_omics2:.4f}")
                 if self.adata_pse_srt is not None:
-                    print(f"recon_pse_srt: {loss_recon_pse_srt / len(self.adata_pse_srt):.4f}, clas: {loss_clas / len(self.adata_pse_srt):.4f}, dis_omics1: {self.loss_dis_omics1:.4f}, dis_pse_srt: {loss_dis_pse_srt / len(self.adata_pse_srt):.4f}")
+                    print(
+                        f"recon_pse_srt: {loss_recon_pse_srt / len(self.adata_pse_srt):.4f}, clas: {loss_clas / len(self.adata_pse_srt):.4f}, dis_omics1: {self.loss_dis_omics1:.4f}, dis_pse_srt: {loss_dis_pse_srt / len(self.adata_pse_srt):.4f}")
 
         print("Model training finished!\n")
 

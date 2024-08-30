@@ -52,7 +52,7 @@ adata.obsm['alpha'] = output['alpha']
 adata.obsm['alpha_omics1'] = output['alpha_omics1']
 adata.obsm['alpha_omics2'] = output['alpha_omics2']
 tool = 'mclust'  # mclust, leiden, and louvain
-clustering(adata, key='SpatialGlue', add_key='SpatialGlue', n_clusters=6, method=tool, use_pca=True)
+clustering(adata, key='SpatialGlue', add_key='SpatialGlue', n_clusters=10, method=tool, use_pca=True)
 
 prediction = adata.obs['SpatialGlue']
 
@@ -70,4 +70,4 @@ if ground_truth is not None:
 # TODO: verify the computation of the moran's I score
 sq.gr.spatial_neighbors(adata)
 sq.gr.spatial_autocorr(adata, attr='obs', mode='moran', genes='SpatialGlue')
-
+print('Moran\'s I score is: ' + str(adata.uns["moranI"]['I'][0]))

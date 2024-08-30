@@ -17,7 +17,14 @@ def mclust_R(adata, num_cluster, modelNames='EEE', used_obsm='emb_pca', random_s
     
     np.random.seed(random_seed)
     import rpy2.robjects as robjects
-    robjects.r.library("mclust")
+    try:
+        robjects.r.library('mclust')
+    except:
+        import rpy2.robjects.packages as rpackages
+        utils = rpackages.importr('utils')
+        utils.chooseCRANmirror(ind=1)
+        utils.install_packages("mclust")
+        robjects.r.library("mclust")
 
     import rpy2.robjects.numpy2ri
     rpy2.robjects.numpy2ri.activate()
