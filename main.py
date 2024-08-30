@@ -26,11 +26,13 @@ default_hyper = {
     "learning_rate": 1e-3,  # learning rate
     "epochs": 200,  # number of epochs
     "weight_factors": [200, 1, 1, 1, 1, 1, 1],
+    # the weight factors, the first four weights are defined in the original SpatialGlue paper
+    # the 5th to 8th weights correspond to data reconstruction loss, edge reconstruction loss and discrimination loss for pseudo SRT data
     "n_top_genes": 3000,  # number of highly variable genes
     "sc_included": False,  # whether to use scRNA-seq to guide spatial multiomics integration
     "tool": 'mclust',  # mclust, leiden, and louvain
     "dataset": 'human_lymph_node',  # this is the only dataset with human annotation
-    "spot_num": 50000
+    "spot_num": 50000  # the number of spots in pseudo SRT data
 }
 
 hyperparameters = {key: config.get(key, default_hyper[key]) for key in default_hyper}
@@ -54,7 +56,7 @@ adata_scrna = sc.read('Dataset/' + dataset + '/adata_scrna.h5ad',
 adata_scrna.obs['celltype'] = adata_scrna.obs['Subset']
 ground_truth = pd.read_csv('Dataset/' + dataset + '/annotation.csv') if dataset == 'human_lymph_node' else None
 
-# generate pseudo spots
+# generate pseudo SRT data
 adata_pse_srt_path = 'Dataset/human_lymph_node/adata_pse_srt_' + str(spot_num) + '.h5ad'
 if not os.path.exists(adata_pse_srt_path):
     adata_pse_srt = pse_srt_from_scrna(adata_scrna, spot_num=spot_num)
