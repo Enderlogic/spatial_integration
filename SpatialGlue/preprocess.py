@@ -93,7 +93,7 @@ def clr_normalize_each_cell(adata, inplace=True):
     )
     return adata     
 
-def construct_graph_by_feature(adata_omics1, adata_omics2, k=20, mode= "connectivity", metric="correlation", include_self=False):
+def construct_graph_by_feature(adata_omics1, adata_omics2, k=50, mode= "connectivity", metric="correlation", include_self=False):
     
     """Constructing feature neighbor graph according to expresss profiles"""
     

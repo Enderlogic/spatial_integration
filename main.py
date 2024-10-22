@@ -32,7 +32,11 @@ default_hyper = {
     "sc_included": False,  # whether to use scRNA-seq to guide spatial multiomics integration
     "tool": 'mclust',  # mclust, leiden, and louvain
     "dataset": 'human_lymph_node',  # this is the only dataset with human annotation
-    "spot_num": 50000  # the number of spots in pseudo SRT data
+    "spot_num": 50000,  # the number of spots in pseudo SRT data
+    "latent_dim": 32,
+    "dropout": .2,
+    "lam": 6,
+    "max_cell_types_in_spot": 4
 }
 
 hyperparameters = {key: config.get(key, default_hyper[key]) for key in default_hyper}
@@ -45,29 +49,40 @@ sc_included = hyperparameters['sc_included']
 tool = hyperparameters['tool']
 dataset = hyperparameters['dataset']
 spot_num = hyperparameters['spot_num']
+latent_dim = hyperparameters['latent_dim']
+dropout = hyperparameters['dropout']
+lam = hyperparameters['lam']
+max_cell_types_in_spot = hyperparameters['max_cell_types_in_spot']
 
 # load necessary datasets including spatial transcriptome, spatial proteome and scRNA-seq
-adata_srt = sc.read_h5ad('Dataset/' + dataset + '/adata_RNA.h5ad')
+adata_srt = sc.read_h5ad('Dataset/' + dataset + '/adata_RNA_ori.h5ad')
 adata_srt.var_names_make_unique()
-adata_pro = sc.read_h5ad('Dataset/' + dataset + '/adata_ADT.h5ad')
+adata_pro = sc.read_h5ad('Dataset/' + dataset + '/adata_ADT_ori.h5ad')
 adata_pro.var_names_make_unique()
 adata_scrna = sc.read('Dataset/' + dataset + '/adata_scrna.h5ad',
                       backup_url='https://cell2location.cog.sanger.ac.uk/paper/integrated_lymphoid_organ_scrna/RegressionNBV4Torch_57covariates_73260cells_10237genes/sc.h5ad')
 adata_scrna.obs['celltype'] = adata_scrna.obs['Subset']
 ground_truth = pd.read_csv('Dataset/' + dataset + '/annotation.csv') if dataset == 'human_lymph_node' else None
 
-# generate pseudo SRT data
-adata_pse_srt_path = 'Dataset/human_lymph_node/adata_pse_srt_' + str(spot_num) + '.h5ad'
-if not os.path.exists(adata_pse_srt_path):
-    adata_pse_srt = pse_srt_from_scrna(adata_scrna, spot_num=spot_num)
-    adata_pse_srt.write_h5ad(adata_pse_srt_path)
-else:
-    adata_pse_srt = sc.read_h5ad(adata_pse_srt_path)
-
 # preprocss ST data
-common_genes = [g for g in adata_srt.var_names if g in adata_pse_srt.var_names]
+common_genes = [g for g in adata_srt.var_names if g in adata_scrna.var_names]
 adata_srt = adata_srt[:, common_genes]
 adata_srt = ST_preprocess(adata_srt, n_top_genes=n_top_genes)
+
+# generate pseudo SRT data
+if sc_included:
+    adata_pse_srt_path = 'Dataset/human_lymph_node/adata_pse_srt_' + str(spot_num) + '_' + str(lam) + '_' + str(
+        max_cell_types_in_spot) + '.h5ad'
+    if not os.path.exists(adata_pse_srt_path):
+        adata_pse_srt = pse_srt_from_scrna(adata_scrna[:, adata_srt.var_names], spot_num=spot_num, lam=lam,
+                                           max_cell_types_in_spot=max_cell_types_in_spot)
+        adata_pse_srt.write_h5ad(adata_pse_srt_path)
+    else:
+        adata_pse_srt = sc.read_h5ad(adata_pse_srt_path)
+    # preprocess pseudo spots
+    adata_pse_srt = ST_preprocess(adata_pse_srt[:, adata_srt.var_names], filter=False, highly_variable_genes=False)
+else:
+    adata_pse_srt = None
 
 # preprocess Protein data
 adata_pro.X = adata_pro.X.toarray()
@@ -75,15 +90,12 @@ adata_pro = clr_normalize_each_cell(adata_pro)
 sc.pp.scale(adata_pro)
 adata_pro.obsm['feat'] = adata_pro.X.copy()
 
-# preprocess pseudo spots
-adata_pse_srt = ST_preprocess(adata_pse_srt[:, adata_srt.var_names], filter=False, highly_variable_genes=False)
-
 # construct data
-data = construct_neighbor_graph(adata_srt, adata_pro, adata_pse_srt if sc_included else None, datatype=data_type,
-                                node_num=adata_srt.n_obs)
+data = construct_neighbor_graph(adata_srt, adata_pro, adata_pse_srt, datatype=data_type, node_num=adata_srt.n_obs)
 
 model = spatial_integration_train(data, datatype=data_type, random_seed=random.randint(0, 10000),
-                                  learning_rate=learning_rate, epochs=epochs, weight_factors=weight_factors)
+                                  learning_rate=learning_rate, epochs=epochs, latent_dim=latent_dim, dropout=dropout,
+                                  weight_factors=weight_factors)
 # train model
 output = model.train()
 
@@ -102,17 +114,17 @@ prediction = adata.obs['spatial_integration']
 
 if ground_truth is not None:
     adata.obs['ground_truth'] = ground_truth['manual-anno'].values
-    ari = adjusted_rand_score(prediction, adata.obs['ground_truth'])
-    mi = mutual_info_score(prediction, adata.obs['ground_truth'])
-    nmi = normalized_mutual_info_score(prediction, adata.obs['ground_truth'])
-    ami = adjusted_mutual_info_score(prediction, adata.obs['ground_truth'])
-    hom = homogeneity_score(prediction, adata.obs['ground_truth'])
-    vme = v_measure_score(prediction, adata.obs['ground_truth'])
+    ari = adjusted_rand_score(adata.obs['ground_truth'], prediction)
+    mi = mutual_info_score(adata.obs['ground_truth'], prediction)
+    nmi = normalized_mutual_info_score(adata.obs['ground_truth'], prediction)
+    ami = adjusted_mutual_info_score(adata.obs['ground_truth'], prediction)
+    hom = homogeneity_score(adata.obs['ground_truth'], prediction)
+    vme = v_measure_score(adata.obs['ground_truth'], prediction)
     ave_score = (ari + mi + nmi + ami + hom + vme) / 6
     print('Average score is: ' + str(ave_score))
 
 # TODO: verify the computation of the moran's I score
-sq.gr.spatial_neighbors(adata)
+sq.gr.spatial_neighbors(adata, coord_type='grid')
 sq.gr.spatial_autocorr(adata, attr='obs', mode='moran', genes='spatial_integration')
 print('Moran\'s I score is: ' + str(adata.uns["moranI"]['I'][0]))
 

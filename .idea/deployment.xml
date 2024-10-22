@@ -3,10 +3,10 @@
   <component name="PublishConfigData" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
     <option name="confirmBeforeUploading" value="false" />
     <serverData>
-      <paths name="yangliu1214@gpuhome.comp.hkbu.edu.hk:22 password">
+      <paths name="gpuhome">
         <serverdata>
           <mappings>
-            <mapping deploy="/home/comp/yangliu1214/spatial_integration" local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/spatial_integration" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>

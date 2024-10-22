@@ -36,7 +36,7 @@ class Encoder_overall(Module):
         Dimension of latent representation for omics1.
     dim_out_feat_omics2 : int
         Dimension of latent representation for omics2, which is the same as omics1.
-    dropout: int
+    dropout: float
         Dropout probability of latent representations.
     act: Activation function. By default, we use ReLU.    
 
@@ -46,20 +46,18 @@ class Encoder_overall(Module):
 
     """
 
-    def __init__(self, dim_in_feat_omics1, dim_out_feat_omics1, dim_in_feat_omics2, dim_out_feat_omics2,
-                 num_cell_type=0, dropout=0, act=F.relu):
+    def __init__(self, dim_in_feat_omics1, dim_out_feat_omics1, dim_in_feat_omics2, dim_out_feat_omics2, hidden_dim_1,
+                 hidden_dim_2, num_cell_type=0, dropout=0., act=F.relu):
         super(Encoder_overall, self).__init__()
         self.dim_in_feat_omics1 = dim_in_feat_omics1
         self.dim_in_feat_omics2 = dim_in_feat_omics2
         self.dim_out_feat_omics1 = dim_out_feat_omics1
         self.dim_out_feat_omics2 = dim_out_feat_omics2
-        self.dropout = dropout
-        self.act = act
 
-        self.encoder_omics1 = Encoder(self.dim_in_feat_omics1, self.dim_out_feat_omics1, 256)
-        self.decoder_omics1 = Decoder(self.dim_out_feat_omics1, self.dim_in_feat_omics1, 256)
-        self.encoder_omics2 = Encoder(self.dim_in_feat_omics2, self.dim_out_feat_omics2, 64)
-        self.decoder_omics2 = Decoder(self.dim_out_feat_omics2, self.dim_in_feat_omics2, 64)
+        self.encoder_omics1 = Encoder(self.dim_in_feat_omics1, self.dim_out_feat_omics1, hidden_dim_1, dropout, act)
+        self.decoder_omics1 = Decoder(self.dim_out_feat_omics1, self.dim_in_feat_omics1, hidden_dim_1, dropout, act)
+        self.encoder_omics2 = Encoder(self.dim_in_feat_omics2, self.dim_out_feat_omics2, hidden_dim_2, dropout, act)
+        self.decoder_omics2 = Decoder(self.dim_out_feat_omics2, self.dim_in_feat_omics2, hidden_dim_2, dropout, act)
 
         self.atten_omics1 = AttentionLayer(self.dim_out_feat_omics1, self.dim_out_feat_omics1)
         self.atten_omics2 = AttentionLayer(self.dim_out_feat_omics2, self.dim_out_feat_omics2)
@@ -137,7 +135,7 @@ class Encoder(Module):
 
     """
 
-    def __init__(self, in_feat, out_feat, hidden_feat=256, dropout=0.0, act=F.relu):
+    def __init__(self, in_feat, out_feat, hidden_feat=256, dropout=0., act=F.relu):
         super(Encoder, self).__init__()
         self.in_feat = in_feat
         self.out_feat = out_feat
@@ -159,8 +157,9 @@ class Encoder(Module):
         x = torch.mm(feat, self.weight1)
         x = torch.spmm(adj, x)
         x = self.act(x)
-        x = self.batch_norm(x)
-        x = F.dropout(x, self.dropout)
+        # x = self.batch_norm(x)
+        # if self.dropout > 0:
+        #     x = F.dropout(x, self.dropout, training=self.training)
         x = torch.mm(x, self.weight2)
         x = torch.spmm(adj, x)
         return x
@@ -208,8 +207,9 @@ class Decoder(Module):
         x = torch.mm(feat, self.weight1)
         x = torch.spmm(adj, x)
         x = self.act(x)
-        x = self.batch_norm(x)
-        x = F.dropout(x, self.dropout)
+        # x = self.batch_norm(x)
+        # if self.dropout > 0:
+        #     x = F.dropout(x, self.dropout, training=self.training)
         x = torch.mm(x, self.weight2)
         x = torch.spmm(adj, x)
         return x

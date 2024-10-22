@@ -10,16 +10,16 @@ import pandas as pd
 from typing import Optional
 import scipy.sparse as sp
 from sklearn.decomposition import PCA
-from sklearn.metrics import DistanceMetric
-from sklearn.metrics.pairwise import cosine_similarity
 from torch.backends import cudnn
 from scipy.sparse import coo_matrix
-from sklearn.neighbors import NearestNeighbors, KDTree
+from sklearn.neighbors import NearestNeighbors
 from sklearn.neighbors import kneighbors_graph
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from tqdm import tqdm
 import warnings
+
 warnings.filterwarnings("ignore")
+
 
 def generate_a_spot_passion(adata_scrna, lam, max_cell_types_in_spot, library):
     cell_num = np.random.poisson(lam=lam) + 1
@@ -126,13 +126,16 @@ class PseudoDataset(Dataset):
             node_feat = torch.FloatTensor(node_feat.copy())
             node_y = torch.FloatTensor(node_y.copy())
             ex_adj = kneighbors_graph(node_feat, self.k, mode="connectivity", metric="correlation", include_self=False)
-            ex_adj = torch.FloatTensor(ex_adj.copy().toarray())
+            ex_adj = ex_adj.copy().toarray()
 
             ex_adj = ex_adj + ex_adj.T
             ex_adj = np.where(ex_adj > 1, 1, ex_adj)
 
             # convert dense matrix to sparse matrix
-            # ex_adj = preprocess_graph(ex_adj)  # sparse adjacent matrix corresponding to feature graph
+            ex_adj_ = ex_adj + np.eye(ex_adj.shape[0])
+            ex_adj = ex_adj_.dot(np.diag(np.power(ex_adj_.sum(1), -.5))).transpose().dot(
+                np.diag(np.power(ex_adj_.sum(1), -.5)))
+            ex_adj = torch.FloatTensor(ex_adj)
             node_feat_ls.append(node_feat)
             node_y_ls.append(node_y)
             adj_ls.append(ex_adj)
@@ -161,7 +164,7 @@ def construct_neighbor_graph(adata_omics1, adata_omics2, adata_pse_srt=None, dat
     ################# spatial graph #################
     if datatype in ['Stereo-CITE-seq', 'Spatial-epigenome-transcriptome']:
         n_neighbors = 6
-        # omics1
+    # omics1
     cell_position_omics1 = adata_omics1.obsm['spatial']
     adj_omics1 = construct_graph_by_coordinate(cell_position_omics1, n_neighbors=n_neighbors)
     adata_omics1.uns['adj_spatial'] = adj_omics1
