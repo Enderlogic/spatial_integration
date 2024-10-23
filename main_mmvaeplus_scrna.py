@@ -24,21 +24,23 @@ zp_dim = 32
 hidden_dim1 = 256
 hidden_dim2 = 256
 weight_omics1 = 1
+weight_omics2 = 1
 weight_kl = 10
 recon_type_omics1 = 'zinb'
 recon_type_omics2 = 'nb'
 heads = 1
-n_batches = 9
-weight_pse_omics1 = .1
-weight_dis = 500
-weight_clas = 0
+n_batches = 5
+weight_pse_omics1 = 1 / n_batches
+weight_dis = 10
+weight_clas = 1000
 # weight_pse_omics1 = 0
 # weight_dis = 0
 # weight_clas = 0
 result_path = 'results/test_wrtscrna.csv'
 result = pd.DataFrame(
-    columns=['dataset', 'learning_rate', 'zs_dim', 'zp_dim', 'hidden_dim1', 'hidden_dim2', 'weight_omics1',
-             'weight_omics2', 'weight_kl', 'epoch', 'n_cluster', 'ari', 'mi', 'nmi', 'ami', 'hom', 'vme', 'ave_score'])
+    columns=['dataset', 'learning_rate', 'zs_dim', 'zp_dim', 'hidden_dim1', 'hidden_dim2', 'heads', 'weight_omics1',
+             'weight_omics2', 'weight_kl', 'weight_pse_omics1', 'weight_dis', 'weight_clas', 'n_batches', 'epoch',
+             'n_cluster', 'ari', 'mi', 'nmi', 'ami', 'hom', 'vme', 'ave_score'])
 result.to_csv(result_path, index=False)
 for dataname in dataset:
     if dataname == 'human_lymph_node':
@@ -56,7 +58,6 @@ for dataname in dataset:
     adata_sc_omics1 = sc.read_h5ad('Dataset/' + dataname + '/adata_scrna.h5ad')
     adata_sc_omics1.obs['celltype'] = adata_sc_omics1.obs['Subset']
 
-    weight_omics2 = adata_omics1.n_vars / adata_omics2.n_vars
     if 'mouse_spleen' in dataname:
         n_cluster_list = [5, 3]
     elif dataname == 'human_lymph_node':

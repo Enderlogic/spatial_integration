@@ -3,11 +3,12 @@ import os
 from datetime import datetime
 
 import numpy as np
+import pandas
 import scanpy
 import torch
 from anndata import read_h5ad, AnnData
 from matplotlib import pyplot as plt
-from pandas import read_csv
+from pandas import read_csv, DataFrame, Series
 from scipy.sparse import issparse
 from sklearn.cluster import KMeans
 from sklearn.metrics import adjusted_rand_score, mutual_info_score, normalized_mutual_info_score, \
@@ -81,6 +82,8 @@ class MMVAEPLUS:
         self.verbose = verbose
         self.use_scrna = use_scrna
         self.learning_rate = learning_rate
+        self.heads = heads
+        self.n_batches = n_batches
 
         # spatial multi-omics
         self.adata_omics1 = adata_omics1.copy()
@@ -90,7 +93,7 @@ class MMVAEPLUS:
         self.data_omics2 = torch.FloatTensor(
             adata_omics2.X.toarray() if issparse(adata_omics2.X) else adata_omics2.X).to(self.device)
 
-        if adata_sc_omics1 is not None:
+        if adata_sc_omics1 is not None and n_batches > 0:
             adata_pse_omics1 = []
             lam_list = [4, 5, 6, 7]
             max_cell_types_in_spot_list = [2, 4, 6]
@@ -137,7 +140,7 @@ class MMVAEPLUS:
 
         # weights
         self.weight_omics1 = weight_omics1
-        self.weight_omics2 = weight_omics2
+        self.weight_omics2 = weight_omics2 * adata_omics1.n_vars / adata_omics2.n_vars
         self.weight_pse_omics1 = weight_pse_omics1
         self.weight_kl = weight_kl
         self.weight_clas = weight_clas
@@ -165,7 +168,10 @@ class MMVAEPLUS:
             recon_omics2 = (losses["recon_omics2"] + losses["recon_omics2_cross"]) * self.weight_omics2
             kl_zs = (losses["kl_zs_omics1"] + losses["kl_zs_omics2"]) * self.weight_kl
             kl_zp = (losses["kl_zp_omics1"] + losses["kl_zp_omics2"]) * self.weight_kl
+            kl_zs_pse_omics1 = losses["kl_zs_pse_omics1"] * self.weight_kl
+            kl_zp_pse_omics1 = losses["kl_zp_pse_omics1"] * self.weight_kl
 
+            # loss = recon_omics1 + recon_omics2 + kl_zs + kl_zp + recon_pse_omics1 + dis + clas + kl_zs_pse_omics1 + kl_zp_pse_omics1
             loss = recon_omics1 + recon_omics2 + kl_zs + kl_zp + recon_pse_omics1 + dis + clas
 
             loss.backward()
@@ -173,10 +179,10 @@ class MMVAEPLUS:
             self.optimizer.step()
             if (epoch + 1) % 10 == 0 and self.verbose:
                 print(
-                    f"Epoch: {epoch + 1}, recon_omics1: {recon_omics1:.4f}, recon_omics2: {recon_omics2:.4f}, kl_zs: {kl_zs:.4f}, kl_zp: {kl_zp:.4f}, recon_pse_omics1: {recon_pse_omics1:.4f}, dis: {dis:.4f}, clas: {clas:.4f}")
+                    f"Epoch: {epoch + 1}, recon_omics1: {recon_omics1:.3f}, recon_omics2: {recon_omics2:.3f}, kl_zs: {kl_zs:.3f}, kl_zp: {kl_zp:.3f}, recon_pse_omics1: {recon_pse_omics1:.3f}, kl_zs_pse_omics1: {kl_zs_pse_omics1:.3f}, kl_zp_pse_omics1: {kl_zp_pse_omics1:.3f}, dis: {dis:.3f}, clas: {clas:.3f}")
             if (epoch + 1) % 10 == 0 and test_mode:
                 data = self.adata_omics1.copy()
-                embed = self.encode(use_pse_omics1=True)
+                embed = self.encode_test(use_pse_omics1=True if self.n_batches > 0 else False)
                 data.obsm['mmvaeplus'] = F.normalize(torch.tensor(embed), p=2, eps=1e-12, dim=1).detach().cpu().numpy()
 
                 for nc in n_cluster_list:
@@ -211,15 +217,27 @@ class MMVAEPLUS:
                             except:
                                 pass
                         result.loc[len(result.index)] = [dataset, self.learning_rate, self.zs_dim, self.zp_dim,
-                                                         self.hidden_dim1, self.hidden_dim2, self.weight_omics1,
-                                                         self.weight_omics2, self.weight_kl, epoch + 1, nc, ari, mi,
-                                                         nmi, ami, hom, vme, ave_score]
+                                                         self.hidden_dim1, self.hidden_dim2, self.heads,
+                                                         self.weight_omics1, self.weight_omics2, self.weight_kl,
+                                                         self.weight_pse_omics1, self.weight_dis, self.weight_clas,
+                                                         self.n_batches, epoch + 1, nc, ari, mi, nmi, ami, hom, vme,
+                                                         ave_score]
                         result.to_csv(result_path, index=False)
                         print(datetime.now())
                         print(result.tail(1).to_string())
         print("Model training finished!\n")
 
-    def encode(self, use_pse_omics1=False):
+    def encode(self):
+        with torch.no_grad():
+            self.model.eval()
+
+            inference_outputs = self.model.inference(self.data_omics1, self.data_omics2, self.edge_index_omics1,
+                                                     self.edge_index_omics2)
+        embed = torch.cat([(inference_outputs['zs_mu_omics1'] + inference_outputs['zs_mu_omics2']) / 2,
+                           inference_outputs['zp_mu_omics1'], inference_outputs['zp_mu_omics2']], dim=-1)
+        return F.normalize(embed, p=2, eps=1e-12, dim=1).detach().cpu().numpy()
+
+    def encode_test(self, use_pse_omics1=False):
         with torch.no_grad():
             self.model.eval()
 
@@ -236,32 +254,20 @@ class MMVAEPLUS:
 
         z_omics1_combined = torch.cat([zs_omics1_combined, zp_omics1_combined], dim=-1)
         adata_z_omics1_combined = AnnData(z_omics1_combined.detach().cpu().numpy())
-        adata_z_omics1_combined.obs['batch'] = np.array(range(2)).repeat(3484)
+        adata_z_omics1_combined.obs['batch'] = np.array(range(self.n_batches + 1)).repeat(embed.shape[0])
         adata_z_omics1_combined.obs['batch'] = adata_z_omics1_combined.obs['batch'].astype('category')
+        ct = []
+        ct.append(Series([self.label_dim]).repeat(embed.shape[0]))
+        for i in range(self.n_batches):
+            ct.append(DataFrame(self.ctp[i].cpu()).idxmax(axis=1))
+        ct = pandas.concat(ct)
+        adata_z_omics1_combined.obs['label'] = ct.values
+        adata_z_omics1_combined.obs['label'] = adata_z_omics1_combined.obs['label'].astype('category')
+        sc.pp.pca(adata_z_omics1_combined)
         sc.pp.neighbors(adata_z_omics1_combined, 20, metric='cosine')
         sc.tl.umap(adata_z_omics1_combined)
-        sc.pl.umap(adata_z_omics1_combined, color=['batch'], save='.pdf')
+        sc.pl.umap(adata_z_omics1_combined, color=['batch', 'label'], save='.pdf')
         return F.normalize(embed, p=2, eps=1e-12, dim=1).detach().cpu().numpy()
-
-    def encode_test(self):
-        with torch.no_grad():
-            self.model.eval()
-            inference_outputs = self.model.inference(self.data_srt, self.data_spr, self.edge_index_srt,
-                                                     self.edge_index_spr)
-        return {
-            'zs_omics1': F.normalize(inference_outputs['zs_mu_omics1'], p=2, eps=1e-12, dim=1).detach().cpu().numpy(),
-            'zp_omics1': F.normalize(inference_outputs['zp_mu_omics1'], p=2, eps=1e-12, dim=1).detach().cpu().numpy(),
-            'zs_omics2': F.normalize(inference_outputs['zs_mu_omics2'], p=2, eps=1e-12, dim=1).detach().cpu().numpy(),
-            'zp_omics2': F.normalize(inference_outputs['zp_mu_omics2'], p=2, eps=1e-12, dim=1).detach().cpu().numpy(),
-            'zs': F.normalize((inference_outputs['zs_mu_omics1'] + inference_outputs['zs_mu_omics2']) / 2, p=2,
-                              eps=1e-12, dim=1).detach().cpu().numpy(), 'z_omics1': F.normalize(
-                torch.cat([inference_outputs['zs_mu_omics1'], inference_outputs['zp_mu_omics1']], dim=-1), p=2,
-                eps=1e-12, dim=1).detach().cpu().numpy(), 'z_omics2': F.normalize(
-                torch.cat([inference_outputs['zs_mu_omics2'], inference_outputs['zp_mu_omics2']], dim=-1), p=2,
-                eps=1e-12, dim=1).detach().cpu().numpy(), 'z': F.normalize(torch.cat(
-                [(inference_outputs['zs_mu_omics1'] + inference_outputs['zs_mu_omics2']) / 2,
-                 inference_outputs['zp_mu_omics1'], inference_outputs['zp_mu_omics2']], dim=-1), p=2, eps=1e-12,
-                dim=1).detach().cpu().numpy()}
 
     def generation(self):
         with torch.no_grad():

@@ -441,12 +441,14 @@ class mmvaeplus(Module):
             zp_pse_omics1 = [reparameterize(zp_mu_pse_omics1[i], zp_logvar_pse_omics1[i]) for i in
                              range(self.omics1_batch_dim - 1)]
         else:
-            zs_pse_omics1 = zp_pse_omics1 = None
+            zs_mu_pse_omics1 = zs_logvar_pse_omics1 = zp_mu_pse_omics1 = zp_logvar_pse_omics1 = zs_pse_omics1 = zp_pse_omics1 = None
 
         return {"zs_mu_omics1": zs_mu_omics1, "zs_logvar_omics1": zs_logvar_omics1, "zp_mu_omics1": zp_mu_omics1,
                 "zp_logvar_omics1": zp_logvar_omics1, "zs_omics1": zs_omics1, "zp_omics1": zp_omics1,
                 "zs_mu_omics2": zs_mu_omics2, "zs_logvar_omics2": zs_logvar_omics2, "zp_mu_omics2": zp_mu_omics2,
                 "zp_logvar_omics2": zp_logvar_omics2, "zs_omics2": zs_omics2, "zp_omics2": zp_omics2,
+                "zs_mu_pse_omics1": zs_mu_pse_omics1, "zs_logvar_pse_omics1": zs_logvar_pse_omics1,
+                "zp_mu_pse_omics1": zp_mu_pse_omics1, "zp_logvar_pse_omics1": zp_logvar_pse_omics1,
                 "zs_pse_omics1": zs_pse_omics1, "zp_pse_omics1": zp_pse_omics1}
 
     def generative(self, inference_outputs):
@@ -513,7 +515,6 @@ class mmvaeplus(Module):
                 x_omics1).sum(1).mean()
         else:
             raise NotImplementedError
-
         kl_zs_omics1 = (log_mean_exp(torch.stack(
             [Normal(zs_mu_omics1, (zs_logvar_omics1 / 2).exp()).log_prob(zs_omics1).sum(1),
              Normal(zs_mu_omics2, (zs_logvar_omics2 / 2).exp()).log_prob(zs_omics1).sum(1)])) - self.zs_prior.log_prob(
@@ -545,10 +546,18 @@ class mmvaeplus(Module):
         kl_zp_omics2 = (Normal(zp_mu_omics2, (zp_logvar_omics2 / 2).exp()).log_prob(zp_omics2) - self.zp_prior.log_prob(
             zp_omics2)).sum(1).mean()
         recon_pse_omics1 = tensor(0., device=self.device)
+
+        # pseudo omics 1
         if x_pse_omics1 is not None:
             # reconstruction loss
-            zs_pse_omics1, zp_pse_omics1 = torch.cat(inference_outputs["zs_pse_omics1"]), torch.cat(
-                inference_outputs["zp_pse_omics1"])
+            zs_mu_pse_omics1, zs_logvar_pse_omics1, zp_mu_pse_omics1, zp_logvar_pse_omics1, zs_pse_omics1, zp_pse_omics1 = torch.cat(
+                inference_outputs["zs_mu_pse_omics1"]), torch.cat(inference_outputs["zs_logvar_pse_omics1"]), torch.cat(
+                inference_outputs["zp_mu_pse_omics1"]), torch.cat(inference_outputs["zp_logvar_pse_omics1"]), torch.cat(
+                inference_outputs["zs_pse_omics1"]), torch.cat(inference_outputs["zp_pse_omics1"])
+            kl_zs_pse_omics1 = (Normal(zs_mu_pse_omics1, (zs_logvar_pse_omics1 / 2).exp()).log_prob(
+                zs_pse_omics1) - self.zs_prior.log_prob(zs_pse_omics1)).sum(1).mean()
+            kl_zp_pse_omics1 = (Normal(zp_mu_pse_omics1, (zp_logvar_pse_omics1 / 2).exp()).log_prob(
+                zp_pse_omics1) - self.zp_prior.log_prob(zp_pse_omics1)).sum(1).mean()
             for i in range(self.omics1_batch_dim - 1):
                 if self.recon_type_omics1 == 'nb':
                     recon_pse_omics1 += -NegBinom(generative_outputs["x_pse_omics1_hat"][i],
@@ -574,11 +583,11 @@ class mmvaeplus(Module):
             decon = self.decon_model(torch.cat([zs_pse_omics1, zp_pse_omics1], dim=1))
             clas = F.cross_entropy(decon, torch.cat(label))
         else:
-            dis = clas = tensor(0., device=self.device)
+            kl_zs_pse_omics1 = kl_zp_pse_omics1 = dis = clas = tensor(0., device=self.device)
         return {"recon_omics1": recon_omics1, "recon_omics2_cross": recon_omics2_cross, "kl_zs_omics1": kl_zs_omics1,
                 "kl_zp_omics1": kl_zp_omics1, "recon_omics2": recon_omics2, "recon_omics1_cross": recon_omics1_cross,
                 "kl_zs_omics2": kl_zs_omics2, "kl_zp_omics2": kl_zp_omics2, "recon_pse_omics1": recon_pse_omics1,
-                "dis": dis, "clas": clas}
+                "kl_zs_pse_omics1": kl_zs_pse_omics1, "kl_zp_pse_omics1": kl_zp_pse_omics1, "dis": dis, "clas": clas}
 
     @property
     def zp_omics1_aux_para(self):

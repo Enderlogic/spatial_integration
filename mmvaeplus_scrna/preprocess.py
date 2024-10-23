@@ -27,8 +27,9 @@ def generate_a_spot_poisson(adata_scrna, lam, max_cell_types_in_spot, library):
     cell_type_list_selected = np.random.choice(adata_scrna.obs['celltype'].value_counts().keys(), size=cell_type_num,
                                                replace=False)
     picked_cell_type = np.unique(np.random.choice(cell_type_list_selected, size=cell_num), return_counts=True)
-    picked_cells = [np.random.choice(library[picked_cell_type[0][i]], picked_cell_type[1][i], replace=False) for i in
-                    range(picked_cell_type[0].size)]
+    picked_cells = [np.random.choice(library[picked_cell_type[0][i]],
+                                     min(picked_cell_type[1][i], library[picked_cell_type[0][i]].size), replace=False)
+                    for i in range(picked_cell_type[0].size)]
     picked_cells = [x for xs in picked_cells for x in xs]
     return adata_scrna[picked_cells]
 
@@ -112,50 +113,6 @@ def ST_preprocess(ST_exp, normalize=True, log=True, highly_variable_genes=True, 
         sc.pp.pca(adata, n_comps=n_comps)
 
     return adata
-
-
-class PseudoDataset(Dataset):
-    def __init__(self, data, node_num, k=20):
-        super(PseudoDataset, self).__init__()
-        self.data = data
-        self.node_num = node_num
-        self.k = k
-        self.num_cell_type = data.obs.shape[1] - 1
-        self.feat, self.y, self.ex_adjs = self.build_graph()
-
-    def __len__(self):
-        return len(self.feat)
-
-    def __getitem__(self, idx):
-        return self.feat[idx], self.y[idx], self.ex_adjs[idx]
-
-    def build_graph(self):
-        node_feat_ls = []
-        node_y_ls = []
-        adj_ls = []
-        num_graphs = int(len(self.data.X) / self.node_num)
-        for i in tqdm(range(num_graphs), desc='Generating pseudo-graphs'):
-            node = self.data[i * self.node_num: (i + 1) * self.node_num]
-            sc.pp.scale(node)
-            node_feat, node_y = node.X.copy(), np.array(node.obs)[:, :-1]
-            node_feat = np.nan_to_num(node_feat, nan=0, posinf=0)
-            node_feat = torch.FloatTensor(node_feat.copy())
-            node_y = torch.FloatTensor(node_y.copy())
-            ex_adj = kneighbors_graph(node_feat, self.k, mode="connectivity", metric="correlation", include_self=False)
-            ex_adj = ex_adj.copy().toarray()
-
-            ex_adj = ex_adj + ex_adj.T
-            ex_adj = np.where(ex_adj > 1, 1, ex_adj)
-
-            # convert dense matrix to sparse matrix
-            ex_adj_ = ex_adj + np.eye(ex_adj.shape[0])
-            ex_adj = ex_adj_.dot(np.diag(np.power(ex_adj_.sum(1), -.5))).transpose().dot(
-                np.diag(np.power(ex_adj_.sum(1), -.5)))
-            ex_adj = torch.FloatTensor(ex_adj)
-            node_feat_ls.append(node_feat)
-            node_y_ls.append(node_y)
-            adj_ls.append(ex_adj)
-        return node_feat_ls, node_y_ls, adj_ls
 
 
 def pca(adata, use_reps=None, n_comps=10):
