@@ -47,7 +47,7 @@ for dataname in dataset:
     model = MMVAEPLUS(adata_omics1, adata_omics2, n_neighbors=20, learning_rate=1e-3, epochs=epochs, zs_dim=16, zp_dim=16,
                       hidden_dim1=256, hidden_dim2=256, weight_omics1=1, weight_omics2=100, weight_kl=10)
     # train model
-    model.train(test_mode=True, n_cluster_list=n_cluster_list)
+    model.train()
     embedding = model.encode()
     # %% evaluation
     adata = adata_omics1.copy()
