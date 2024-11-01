@@ -1,9 +1,14 @@
-To run my modified model, please use the following code
+To run my model for one time, please use the following code
 ```
-python main.py --input configs/human_lymph_node.json
+python main_mmvaeplus_wrtscrna.py
 ```
 
-To run the original SpatialGlue model, please use the following code
+To run my model for multiple times using finetuned hyper-parameters, please use the following code
 ```
-python spatialglue.py
+python evaluation_mmvaeplus_wrtscrna.py
+```
+
+To run the SpatialGlue algorithm for multiple times using default hyper-parameters, please use the following code
+```
+python evaluation_spatialglue.py
 ```
