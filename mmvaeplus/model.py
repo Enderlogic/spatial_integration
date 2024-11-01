@@ -392,7 +392,7 @@ class mmvaeplus(Module):
         self.encoder_zp_omics2 = Encoder(omics2_dim, hidden_dim_omics2, zp_dim, heads)
 
         self.decoder_omics1 = Decoder(self.latent_dim, hidden_dim_omics1, omics1_dim, recon_type)
-        self.decoder_omics2 = Decoder(self.latent_dim, hidden_dim_omics2, omics2_dim, recon_type)
+        self.decoder_omics2 = Decoder(self.latent_dim, hidden_dim_omics2, omics2_dim, 'nb')
 
         self.theta_omics1 = Parameter(torch.randn(omics1_dim, device=device), requires_grad=True)
         self.theta_omics2 = Parameter(torch.randn(omics2_dim, device=device), requires_grad=True)
