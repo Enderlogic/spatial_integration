@@ -270,7 +270,7 @@ def make_symmetric(edge_index):
     return combined_edge_index
 
 
-def adjacent_matrix_preprocessing(adata_omics1, adata_omics2, n_neighbors=20, adata_pse=None):
+def adjacent_matrix_preprocessing(adata_omics1, adata_omics2, n_neighbors=20):
     """Converting dense adjacent matrix to sparse adjacent matrix"""
     ######################################## construct spatial graph ########################################
     edge_index_spatial = construct_graph_by_coordinate(adata_omics1.obsm['spatial'])
@@ -281,13 +281,7 @@ def adjacent_matrix_preprocessing(adata_omics1, adata_omics2, n_neighbors=20, ad
 
     edge_index_omics1 = coalesce(torch.cat([edge_index_feature_omics1, edge_index_spatial], dim=1))
     edge_index_omics2 = coalesce(torch.cat([edge_index_feature_omics2, edge_index_spatial], dim=1))
-    if adata_pse is not None:
-        feature_graph_pse = torch.tensor(kneighbors_graph(adata_pse.obsm['X_pca'], n_neighbors=n_neighbors, include_self=True).todense())
-        edge_index_pse = feature_graph_pse.nonzero().t().contiguous()
-        # edge_index_pse = make_symmetric(edge_index_pse)
-        return edge_index_omics1, edge_index_omics2, edge_index_pse
-    else:
-        return edge_index_omics1, edge_index_omics2
+    return edge_index_omics1, edge_index_omics2
 
 
 def lsi(

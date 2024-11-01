@@ -118,7 +118,7 @@ class NegativeBinomial(Distribution):
 
     (1), (`total_count`, `probs`) where `total_count` is the number of failures until
     the experiment is stopped and `probs` the success probability. (2), (`mu`, `theta`)
-    parameterization, which is the one used by scvi-tools. These parameters respectively
+    parameterization, which is the one used by scvi_local-tools. These parameters respectively
     control the mean and inverse dispersion of the distribution.
 
     In the (`mu`, `theta`) parameterization, samples from the negative binomial are generated as
@@ -201,7 +201,7 @@ class ZeroInflatedNegativeBinomial(NegativeBinomial):
 
     (1), (`total_count`, `probs`) where `total_count` is the number of failures until
     the experiment is stopped and `probs` the success probability. (2), (`mu`, `theta`)
-    parameterization, which is the one used by scvi-tools. These parameters respectively
+    parameterization, which is the one used by scvi_local-tools. These parameters respectively
     control the mean and inverse dispersion of the distribution.
 
     In the (`mu`, `theta`) parameterization, samples from the negative binomial are generated as
@@ -401,7 +401,8 @@ class mmvaeplus(Module):
 
         if label_dim > 0:
             self.decon_model = nn.Sequential(nn.Linear(self.latent_dim, 16), nn.ReLU(), nn.Linear(16, label_dim))
-            self.dis = nn.Sequential(GRL(), nn.Linear(self.latent_dim, 16), nn.ReLU(), nn.Linear(16, omics1_batch_dim))
+            self.dis_zs = nn.Sequential(GRL(), nn.Linear(zs_dim, 16), nn.ReLU(), nn.Linear(16, 2))
+            self.dis_zp = nn.Sequential(GRL(), nn.Linear(zp_dim, 16), nn.ReLU(), nn.Linear(16, 2))
         self.to(device)
 
     def inference(self, x_omics1, x_omics2, edge_index_omics1, edge_index_omics2, x_pse_omics1=None,
@@ -459,8 +460,6 @@ class mmvaeplus(Module):
         x_omics2_outputs = self.decoder_omics2(torch.cat([zs_omics2, zp_omics2], dim=-1))
 
         # cross modality reconstruction
-        if (self.zp_omics1_aux_para[1] != self.zp_omics1_aux_para[1]).any():
-            a = 1
         zp_omics1_aux = Normal(*self.zp_omics1_aux_para).rsample(torch.Size([zp_omics1.shape[0]])).squeeze(1)
         zp_omics2_aux = Normal(*self.zp_omics1_aux_para).rsample(torch.Size([zp_omics1.shape[0]])).squeeze(1)
 
@@ -574,10 +573,15 @@ class mmvaeplus(Module):
             # discrimination loss
             zs_omics1_combined = torch.cat([zs_omics1, zs_pse_omics1])
             zp_omics1_combined = torch.cat([zp_omics1, zp_pse_omics1])
-            dis_omics1 = self.dis(torch.cat([zs_omics1_combined, zp_omics1_combined], dim=1))
-            dis = F.cross_entropy(dis_omics1, torch.cat([tensor(0).repeat(x_omics1.shape[0]), torch.cat(
-                [tensor(i).repeat(x_pse_omics1[0].shape[0]) for i in range(1, self.omics1_batch_dim)])]).to(
-                self.device))
+            dis_zs_omics1 = self.dis_zs(zs_omics1_combined)
+            dis_zp_omics1 = self.dis_zp(zp_omics1_combined)
+            # dis = F.cross_entropy(dis_omics1, torch.cat([tensor(0).repeat(x_omics1.shape[0]), torch.cat(
+            #     [tensor(i).repeat(x_pse_omics1[0].shape[0]) for i in range(1, self.omics1_batch_dim)])]).to(
+            #     self.device))
+            dis = F.cross_entropy(dis_zs_omics1, torch.cat([tensor(0).repeat(x_omics1.shape[0]), torch.cat(
+                [tensor(1).repeat(dis_zs_omics1.shape[0] - x_omics1.shape[0])])]).to(self.device)) + F.cross_entropy(
+                dis_zp_omics1, torch.cat([tensor(0).repeat(x_omics1.shape[0]), torch.cat(
+                    [tensor(1).repeat(dis_zp_omics1.shape[0] - x_omics1.shape[0])])]).to(self.device))
 
             # classification loss
             decon = self.decon_model(torch.cat([zs_pse_omics1, zp_pse_omics1], dim=1))

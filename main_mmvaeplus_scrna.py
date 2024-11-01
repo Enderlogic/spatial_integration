@@ -1,22 +1,19 @@
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
-from scipy.sparse import issparse
 from sklearn.metrics import adjusted_rand_score, mutual_info_score, normalized_mutual_info_score, \
     adjusted_mutual_info_score, homogeneity_score, v_measure_score
 import scanpy as sc
 
-from SpatialGlue.preprocess import clr_normalize_each_cell
 from SpatialGlue.utils import clustering
-from mmvaeplus_scrna.preprocess import ST_preprocess, pse_srt_from_scrna
 from mmvaeplus_scrna.mmvaeplus import MMVAEPLUS
 
 # dataset = ['mouse_spleen_rep2', 'human_lymph_node', 'mouse_spleen_rep1', 'mouse_breast_cancer']
 dataset = ['human_lymph_node']
 method = 'mmvaeplus'
 n_cluster = 10
-lam = 2
-max_cell_types_in_spot = 4
+lam = 4
+max_cell_types_in_spot = 6
 n_neighbors = 20
 learning_rate = 1e-3
 zs_dim = 32
@@ -29,9 +26,9 @@ weight_kl = 10
 recon_type_omics1 = 'zinb'
 recon_type_omics2 = 'nb'
 heads = 1
-n_batches = 5
+n_batches = 1
 weight_pse_omics1 = 1 / n_batches
-weight_dis = 10
+weight_dis = 1000
 weight_clas = 1000
 # weight_pse_omics1 = 0
 # weight_dis = 0

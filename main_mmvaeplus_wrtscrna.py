@@ -1,6 +1,5 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from pandas import DataFrame
 from scipy.sparse import issparse
 from sklearn.metrics import adjusted_rand_score, mutual_info_score, normalized_mutual_info_score, \
     adjusted_mutual_info_score, homogeneity_score, v_measure_score
@@ -11,7 +10,8 @@ from SpatialGlue.utils import clustering
 from mmvaeplus.preprocess import ST_preprocess
 from mmvaeplus.mmvaeplus import MMVAEPLUS
 
-dataset = ['mouse_spleen_rep2', 'human_lymph_node', 'mouse_spleen_rep1', 'mouse_breast_cancer']
+# dataset = ['human_lymph_node', 'mouse_spleen_rep2', 'mouse_spleen_rep1', 'mouse_breast_cancer']
+dataset = ['human_lymph_node']
 method = 'mmvaeplus'
 n_cluster = 10
 
@@ -24,9 +24,6 @@ for dataname in dataset:
     sc.pp.filter_genes(adata_omics1, min_cells=1)
 
     # preprocss ST data
-    # adata_scrna = sc.read_h5ad('Dataset/' + dataname + '/adata_scrna.h5ad')
-    # common_genes = [g for g in adata_omics1.var_names if g in adata_scrna.var_names]
-    # adata_omics1 = adata_omics1[:, common_genes]
     adata_omics1 = ST_preprocess(adata_omics1, n_top_genes=3000, n_comps=50)
     adata_omics1 = adata_omics1[:, adata_omics1.var.highly_variable]
 
@@ -38,19 +35,20 @@ for dataname in dataset:
 
     if 'mouse_spleen' in dataname:
         n_cluster_list = [5, 3]
+        epochs = 600
     elif dataname == 'human_lymph_node':
         n_cluster_list = [6, 10]
+        epochs = 100
     elif dataname == 'mouse_breast_cancer':
         n_cluster_list = [5]
+        epochs = 400
     else:
         raise Exception('Data not recognized')
-    model = MMVAEPLUS(adata_omics1, adata_omics2, n_neighbors=20, learning_rate=1e-3, epochs=600, zs_dim=16, zp_dim=16,
-                      hidden_dim1=256, hidden_dim2=256, weight_omics1=1, weight_omics2=200, weight_kl=20)
+    model = MMVAEPLUS(adata_omics1, adata_omics2, n_neighbors=20, learning_rate=1e-3, epochs=epochs, zs_dim=16, zp_dim=16,
+                      hidden_dim1=256, hidden_dim2=256, weight_omics1=1, weight_omics2=100, weight_kl=10)
     # train model
-    model.train(early_stop=True, test_mode=True, n_cluster_list=n_cluster_list)
+    model.train(test_mode=True, n_cluster_list=n_cluster_list)
     embedding = model.encode()
-
-    outputs = model.generation()
     # %% evaluation
     adata = adata_omics1.copy()
     adata.obsm[method] = embedding.copy()

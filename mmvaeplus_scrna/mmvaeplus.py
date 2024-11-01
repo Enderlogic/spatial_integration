@@ -62,6 +62,7 @@ class MMVAEPLUS:
         '''
 
         # preprocss ST data
+        self.epoch = 0
         if adata_sc_omics1 is not None:
             common_genes = [g for g in adata_omics1.var_names if g in adata_sc_omics1.var_names]
             adata_omics1 = adata_omics1[:, common_genes]
@@ -95,8 +96,8 @@ class MMVAEPLUS:
 
         if adata_sc_omics1 is not None and n_batches > 0:
             adata_pse_omics1 = []
-            lam_list = [4, 5, 6, 7]
-            max_cell_types_in_spot_list = [2, 4, 6]
+            lam_list = [4, 6, 8, 10]
+            max_cell_types_in_spot_list = [2, 4, 6, 8]
             param_list = list(itertools.product(*[lam_list, max_cell_types_in_spot_list]))
             spot_num = adata_omics1.n_obs
             for i in range(n_batches):
@@ -122,7 +123,7 @@ class MMVAEPLUS:
         self.edge_index_omics1 = edge_index_omics1.to(self.device)
         self.edge_index_omics2 = edge_index_omics2.to(self.device)
 
-        if adata_sc_omics1 is None:
+        if adata_sc_omics1 is None or n_batches == 0:
             self.adata_pse_omics1 = self.data_pse_omics1 = self.ctp = self.edge_index_pse_omics1 = None
             self.label_dim = 0
         else:
@@ -156,7 +157,7 @@ class MMVAEPLUS:
             n_cluster_list = [10]
         print("model is executed on: " + str(next(self.model.parameters()).device))
         self.model.train()
-        for epoch in range(self.epochs):
+        for self.epoch in range(self.epochs):
             self.optimizer.zero_grad()
             losses = self.model.loss(self.data_omics1, self.data_omics2, self.edge_index_omics1, self.edge_index_omics2,
                                      self.data_pse_omics1, self.edge_index_pse_omics1, self.ctp)
@@ -171,16 +172,16 @@ class MMVAEPLUS:
             kl_zs_pse_omics1 = losses["kl_zs_pse_omics1"] * self.weight_kl
             kl_zp_pse_omics1 = losses["kl_zp_pse_omics1"] * self.weight_kl
 
-            # loss = recon_omics1 + recon_omics2 + kl_zs + kl_zp + recon_pse_omics1 + dis + clas + kl_zs_pse_omics1 + kl_zp_pse_omics1
-            loss = recon_omics1 + recon_omics2 + kl_zs + kl_zp + recon_pse_omics1 + dis + clas
+            loss = recon_omics1 + recon_omics2 + kl_zs + kl_zp + recon_pse_omics1 + dis + clas + kl_zs_pse_omics1 + kl_zp_pse_omics1
+            # loss = recon_omics1 + recon_omics2 + kl_zs + kl_zp + recon_pse_omics1 + dis + clas
 
             loss.backward()
             clip_grad_norm_(self.model.parameters(), 5)
             self.optimizer.step()
-            if (epoch + 1) % 10 == 0 and self.verbose:
+            if (self.epoch + 1) % 10 == 0 and self.verbose:
                 print(
-                    f"Epoch: {epoch + 1}, recon_omics1: {recon_omics1:.3f}, recon_omics2: {recon_omics2:.3f}, kl_zs: {kl_zs:.3f}, kl_zp: {kl_zp:.3f}, recon_pse_omics1: {recon_pse_omics1:.3f}, kl_zs_pse_omics1: {kl_zs_pse_omics1:.3f}, kl_zp_pse_omics1: {kl_zp_pse_omics1:.3f}, dis: {dis:.3f}, clas: {clas:.3f}")
-            if (epoch + 1) % 10 == 0 and test_mode:
+                    f"Epoch: {self.epoch + 1}, recon_omics1: {recon_omics1:.3f}, recon_omics2: {recon_omics2:.3f}, kl_zs: {kl_zs:.3f}, kl_zp: {kl_zp:.3f}, recon_pse_omics1: {recon_pse_omics1:.3f}, kl_zs_pse_omics1: {kl_zs_pse_omics1:.3f}, kl_zp_pse_omics1: {kl_zp_pse_omics1:.3f}, dis: {dis:.3f}, clas: {clas:.3f}")
+            if (self.epoch + 1) % 10 == 0 and test_mode:
                 data = self.adata_omics1.copy()
                 embed = self.encode_test(use_pse_omics1=True if self.n_batches > 0 else False)
                 data.obsm['mmvaeplus'] = F.normalize(torch.tensor(embed), p=2, eps=1e-12, dim=1).detach().cpu().numpy()
@@ -220,8 +221,8 @@ class MMVAEPLUS:
                                                          self.hidden_dim1, self.hidden_dim2, self.heads,
                                                          self.weight_omics1, self.weight_omics2, self.weight_kl,
                                                          self.weight_pse_omics1, self.weight_dis, self.weight_clas,
-                                                         self.n_batches, epoch + 1, nc, ari, mi, nmi, ami, hom, vme,
-                                                         ave_score]
+                                                         self.n_batches, self.epoch + 1, nc, ari, mi, nmi, ami, hom,
+                                                         vme, ave_score]
                         result.to_csv(result_path, index=False)
                         print(datetime.now())
                         print(result.tail(1).to_string())
@@ -247,10 +248,14 @@ class MMVAEPLUS:
                                                      self.edge_index_pse_omics1 if use_pse_omics1 else None)
         embed = torch.cat([(inference_outputs['zs_mu_omics1'] + inference_outputs['zs_mu_omics2']) / 2,
                            inference_outputs['zp_mu_omics1'], inference_outputs['zp_mu_omics2']], dim=-1)
-        zs_omics1_combined = torch.cat(
-            [inference_outputs["zs_mu_omics1"], torch.cat(inference_outputs["zs_pse_omics1"])])
-        zp_omics1_combined = torch.cat(
-            [inference_outputs["zp_mu_omics1"], torch.cat(inference_outputs["zp_pse_omics1"])])
+        if use_pse_omics1:
+            zs_omics1_combined = torch.cat(
+                [inference_outputs["zs_mu_omics1"], torch.cat(inference_outputs["zs_pse_omics1"])])
+            zp_omics1_combined = torch.cat(
+                [inference_outputs["zp_mu_omics1"], torch.cat(inference_outputs["zp_pse_omics1"])])
+        else:
+            zs_omics1_combined, zp_omics1_combined = inference_outputs["zs_mu_omics1"], inference_outputs[
+                "zp_mu_omics1"]
 
         z_omics1_combined = torch.cat([zs_omics1_combined, zp_omics1_combined], dim=-1)
         adata_z_omics1_combined = AnnData(z_omics1_combined.detach().cpu().numpy())
@@ -266,7 +271,7 @@ class MMVAEPLUS:
         sc.pp.pca(adata_z_omics1_combined)
         sc.pp.neighbors(adata_z_omics1_combined, 20, metric='cosine')
         sc.tl.umap(adata_z_omics1_combined)
-        sc.pl.umap(adata_z_omics1_combined, color=['batch', 'label'], save='.pdf')
+        sc.pl.umap(adata_z_omics1_combined, color=['batch', 'label'], save=str(self.epoch + 1) + '.pdf')
         return F.normalize(embed, p=2, eps=1e-12, dim=1).detach().cpu().numpy()
 
     def generation(self):

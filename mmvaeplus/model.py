@@ -113,7 +113,7 @@ class NegativeBinomial(Distribution):
 
     (1), (`total_count`, `probs`) where `total_count` is the number of failures until
     the experiment is stopped and `probs` the success probability. (2), (`mu`, `theta`)
-    parameterization, which is the one used by scvi-tools. These parameters respectively
+    parameterization, which is the one used by scvi_local-tools. These parameters respectively
     control the mean and inverse dispersion of the distribution.
 
     In the (`mu`, `theta`) parameterization, samples from the negative binomial are generated as
@@ -196,7 +196,7 @@ class ZeroInflatedNegativeBinomial(NegativeBinomial):
 
     (1), (`total_count`, `probs`) where `total_count` is the number of failures until
     the experiment is stopped and `probs` the success probability. (2), (`mu`, `theta`)
-    parameterization, which is the one used by scvi-tools. These parameters respectively
+    parameterization, which is the one used by scvi_local-tools. These parameters respectively
     control the mean and inverse dispersion of the distribution.
 
     In the (`mu`, `theta`) parameterization, samples from the negative binomial are generated as
@@ -238,9 +238,9 @@ class ZeroInflatedNegativeBinomial(NegativeBinomial):
             zi_logits: torch.Tensor | None = None
     ):
         super().__init__(mu=mu,
-            theta=theta,
-            zi_logits=zi_logits
-        )
+                         theta=theta,
+                         zi_logits=zi_logits
+                         )
         self.zi_logits = zi_logits
         self.mu = mu
         self.theta = theta
@@ -368,12 +368,11 @@ class mmvaeplus(Module):
     """
 
     def __init__(self, omics1_dim, omics2_dim, zs_dim, zp_dim, hidden_dim_omics1=256, hidden_dim_omics2=256,
-                 label_dim=0, device=torch.device('cpu'), recon_type='nb', heads=1):
+                 device=torch.device('cpu'), recon_type='nb', heads=1):
         super(mmvaeplus, self).__init__()
         self.zs_dim = zs_dim
         self.zp_dim = zp_dim
         self.latent_dim = zs_dim + zp_dim
-        self.label_dim = label_dim
         self.recon_type = recon_type
 
         self._zp_omics1_aux_para = ParameterList([Parameter(torch.zeros(1, zp_dim, device=device), requires_grad=False),
@@ -393,14 +392,10 @@ class mmvaeplus(Module):
         self.encoder_zp_omics2 = Encoder(omics2_dim, hidden_dim_omics2, zp_dim, heads)
 
         self.decoder_omics1 = Decoder(self.latent_dim, hidden_dim_omics1, omics1_dim, recon_type)
-        self.decoder_omics2 = Decoder(self.latent_dim, hidden_dim_omics2, omics2_dim, 'possion')
+        self.decoder_omics2 = Decoder(self.latent_dim, hidden_dim_omics2, omics2_dim, recon_type)
 
         self.theta_omics1 = Parameter(torch.randn(omics1_dim, device=device), requires_grad=True)
         self.theta_omics2 = Parameter(torch.randn(omics2_dim, device=device), requires_grad=True)
-
-        if label_dim > 0:
-            self.dis = nn.Sequential(GRL(), nn.Linear(self.latent_dim, 16), nn.ReLU(), nn.Linear(16, 2))
-            self.decon_model = nn.Sequential(nn.Linear(self.latent_dim, 16), nn.ReLU(), nn.Linear(16, label_dim))
         self.to(device)
 
     def inference(self, x_omics1, x_omics2, edge_index_omics1, edge_index_omics2):
@@ -425,7 +420,7 @@ class mmvaeplus(Module):
                 "zs_mu_omics2": zs_mu_omics2, "zs_logvar_omics2": zs_logvar_omics2, "zp_mu_omics2": zp_mu_omics2,
                 "zp_logvar_omics2": zp_logvar_omics2, "zs_omics2": zs_omics2, "zp_omics2": zp_omics2}
 
-    def generative(self, inference_outputs, edge_index_omics1, edge_index_omics2):
+    def generative(self, inference_outputs):
         # self modality reconstruction
         zs_omics1, zp_omics1 = inference_outputs["zs_omics1"], inference_outputs["zp_omics1"]
         zs_omics2, zp_omics2 = inference_outputs["zs_omics2"], inference_outputs["zp_omics2"]
@@ -447,19 +442,7 @@ class mmvaeplus(Module):
             outputs["x_omics1_cross_dropout"] = x_omics1_cross_outputs["dropout"]
         return outputs
 
-    def inference_pse(self, x_pse, edge_index_pse):
-        # pseudo-omics 1
-        zs_mu_pse, zs_logvar_pse = torch.split(self.encoder_zs_omics1(x_pse, edge_index_pse),
-                                               [self.zs_dim, self.zs_dim], dim=-1)
-        zp_mu_pse, zp_logvar_pse = torch.split(self.encoder_zp_omics1(x_pse, edge_index_pse),
-                                               [self.zp_dim, self.zp_dim], dim=-1)
-        zs_pse = reparameterize(zs_mu_pse, zs_logvar_pse)
-        zp_pse = reparameterize(zp_mu_pse, zp_logvar_pse)
-
-        return {"zs_pse": zs_pse, "zp_pse": zp_pse}
-
-    def loss(self, x_omics1, x_omics2, edge_index_omics1, edge_index_omics2, x_pse=None, edge_index_pse=None,
-             label=None):
+    def loss(self, x_omics1, x_omics2, edge_index_omics1, edge_index_omics2):
         inference_outputs = self.inference(x_omics1, x_omics2, edge_index_omics1, edge_index_omics2)
         zs_mu_omics1, zs_logvar_omics1, zp_mu_omics1, zp_logvar_omics1, zs_omics1, zp_omics1 = inference_outputs[
             "zs_mu_omics1"], inference_outputs["zs_logvar_omics1"], inference_outputs["zp_mu_omics1"], \
@@ -468,7 +451,7 @@ class mmvaeplus(Module):
         zs_mu_omics2, zs_logvar_omics2, zp_mu_omics2, zp_logvar_omics2, zs_omics2, zp_omics2 = inference_outputs[
             "zs_mu_omics2"], inference_outputs["zs_logvar_omics2"], inference_outputs["zp_mu_omics2"], \
             inference_outputs["zp_logvar_omics2"], inference_outputs["zs_omics2"], inference_outputs["zp_omics2"]
-        generative_outputs = self.generative(inference_outputs, edge_index_omics1, edge_index_omics2)
+        generative_outputs = self.generative(inference_outputs)
 
         # omics 1
         if self.recon_type == 'nb':
@@ -510,29 +493,6 @@ class mmvaeplus(Module):
                   "kl_zs_omics1": kl_zs_omics1, "kl_zp_omics1": kl_zp_omics1, "recon_omics2": recon_omics2,
                   "recon_omics1_cross": recon_omics1_cross, "kl_zs_omics2": kl_zs_omics2,
                   "kl_zp_omics2": kl_zp_omics2}
-        if x_pse is not None:
-            inference_pse_outputs = self.inference_pse(x_pse, edge_index_pse)
-            z_pse = torch.cat([inference_pse_outputs['zs_pse'], inference_pse_outputs['zp_pse']], dim=1)
-            x_pse_hat = self.decoder_omics1(z_pse)
-
-            # reconstruction loss
-            recon_pse = -NegBinom(x_pse_hat, self.theta_omics1.exp()).log_prob(x_pse).sum(1).mean()
-
-            # discrimination loss
-            dis_pse = self.dis(z_pse)
-            dis_omics1 = self.dis(torch.cat([zs_omics1, zp_omics1], dim=1))
-            dis = (F.cross_entropy(dis_omics1,
-                                   tensor([1] * dis_omics1.size(0), device=dis_omics1.device)) * dis_omics1.size(
-                0) + F.cross_entropy(dis_pse, tensor([0] * dis_pse.size(0), device=dis_pse.device)) * dis_pse.size(
-                0)) / (dis_omics1.size(0) + dis_pse.size(0))
-
-            # classification loss
-            decon = self.decon_model(z_pse)
-            clas = F.cross_entropy(decon, label)
-
-            losses['recon_pse'] = recon_pse
-            losses['dis'] = dis
-            losses['clas'] = clas
         return losses
 
     @property
