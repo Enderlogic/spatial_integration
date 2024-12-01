@@ -60,10 +60,10 @@ ccRCC_merge_hvf = sc.read_h5ad('Dataset/ccRCC_ST_SM_merge_data/ccRCC_merge_hvf.h
 ccRCC_merge_final = sc.read_h5ad('Dataset/ccRCC_ST_SM_merge_data/ccRCC_merge_final.h5ad')
 ccRCC_merge_hvf_afterVAE = sc.read_h5ad('Dataset/ccRCC_ST_SM_merge_data/ccRCC_merge_hvf_afterVAE.h5ad')
 
-st = sc.read_h5ad('Dataset/human_lymph_node/adata_RNA_ori.h5ad')
+st = sc.read_h5ad('Dataset/human_lymph_node_rep1/adata_RNA_ori.h5ad')
 st.var_names_make_unique()
 sc.pp.pca(st)
-adt = sc.read_h5ad('Dataset/human_lymph_node/adata_ADT_ori.h5ad')
+adt = sc.read_h5ad('Dataset/human_lymph_node_rep1/adata_ADT_ori.h5ad')
 adt.var_names_make_unique()
 adt.X = adt.X.toarray()
 adt = clr_normalize_each_cell(adt)

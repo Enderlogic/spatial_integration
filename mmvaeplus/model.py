@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Dirichlet, Normal, kl_divergence, Distribution, constraints, Gamma, Poisson
 from torch.distributions.utils import probs_to_logits, logits_to_probs, lazy_property
-from torch.nn import Linear, ParameterList
+from torch.nn import Linear, ParameterList, Sequential, ReLU, Softplus
 from torch.nn.functional import mse_loss
 from torch.nn.parameter import Parameter
 from torch.nn.modules.module import Module
@@ -379,8 +379,7 @@ class mmvaeplus(Module):
                                                   Parameter(torch.zeros(1, zp_dim, device=device), requires_grad=True)])
         self._zp_omics2_aux_para = ParameterList([Parameter(torch.zeros(1, zp_dim, device=device), requires_grad=False),
                                                   Parameter(torch.zeros(1, zp_dim, device=device), requires_grad=True)])
-        self.pzs = Normal
-        self.pzp = Normal
+
         self.zs_prior = Normal(*ParameterList([Parameter(torch.zeros(1, zs_dim, device=device), requires_grad=False),
                                                Parameter(torch.ones(1, zs_dim, device=device), requires_grad=False)]))
         self.zp_prior = Normal(*ParameterList([Parameter(torch.zeros(1, zp_dim, device=device), requires_grad=False),
@@ -430,7 +429,7 @@ class mmvaeplus(Module):
 
         # cross modality reconstruction
         zp_omics1_aux = Normal(*self.zp_omics1_aux_para).rsample(torch.Size([zp_omics1.shape[0]])).squeeze(1)
-        zp_omics2_aux = Normal(*self.zp_omics1_aux_para).rsample(torch.Size([zp_omics1.shape[0]])).squeeze(1)
+        zp_omics2_aux = Normal(*self.zp_omics2_aux_para).rsample(torch.Size([zp_omics2.shape[0]])).squeeze(1)
         x_omics1_cross_outputs = self.decoder_omics1(torch.cat([zs_omics2, zp_omics1_aux], dim=-1))
         x_omics2_cross_outputs = self.decoder_omics2(torch.cat([zs_omics1, zp_omics2_aux], dim=-1))
 

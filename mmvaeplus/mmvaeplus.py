@@ -1,18 +1,16 @@
 from datetime import datetime
 
 import numpy as np
-import scanpy
+import scanpy as sc
 import torch
 from matplotlib import pyplot as plt
-from pandas import read_csv
+from pandas import read_csv, get_dummies
 from scipy.sparse import issparse
-from sklearn.cluster import KMeans
 from sklearn.metrics import adjusted_rand_score, mutual_info_score, normalized_mutual_info_score, \
     adjusted_mutual_info_score, homogeneity_score, v_measure_score
-from torch import tensor
 import torch.nn.functional as F
+from sklearn.neighbors import kneighbors_graph
 from torch.nn.utils import clip_grad_norm_
-
 from .utils import clustering
 from .model import mmvaeplus, NegBinom
 from .preprocess import adjacent_matrix_preprocessing
@@ -70,6 +68,10 @@ class MMVAEPLUS:
         # weights
         self.weight_omics1 = weight_omics1
         self.weight_omics2 = weight_omics2
+        if adata_omics1.n_vars > adata_omics2.n_vars:
+            self.weight_omics2 *= adata_omics1.n_vars / adata_omics2.n_vars
+        else:
+            self.weight_omics1 *= adata_omics2.n_vars / adata_omics1.n_vars
         self.weight_kl = weight_kl
 
         self.model = mmvaeplus(self.dim_input1, self.dim_input2, zs_dim, zp_dim, hidden_dim1, hidden_dim2, self.device,
@@ -77,6 +79,7 @@ class MMVAEPLUS:
         self.optimizer = torch.optim.Adam(self.model.parameters(), learning_rate)
 
     def train(self, plot_result=False, result_path=None, dataset=None, n_cluster_list=None, test_mode=False):
+        key = 'mmvaeplus'
         if n_cluster_list is None:
             n_cluster_list = [10]
         print("model is executed on: " + str(next(self.model.parameters()).device))
@@ -105,33 +108,36 @@ class MMVAEPLUS:
                 embed = self.encode()
                 if (epoch + 1) % 50 == 0 and test_mode:
                     data_omics1 = self.adata_omics1.copy()
-                    data_omics1.obsm['mmvaeplus'] = F.normalize(torch.tensor(embed), p=2, eps=1e-12,
-                                                             dim=1).detach().cpu().numpy()
-
+                    data_omics1.obsm[key] = F.normalize(torch.tensor(embed), p=2, eps=1e-12,
+                                                        dim=1).detach().cpu().numpy()
+                    data_omics1.obsm[key] = data_omics1.obsm[key][:, data_omics1.obsm[key].std(0) > 0]
+                    jaccard1, jaccard2 = calculate_jaccard(data_omics1, self.adata_omics1, self.adata_omics2, key, k=50)
                     for nc in n_cluster_list:
-                        clustering(data_omics1, key='mmvaeplus', add_key='mmvaeplus', n_clusters=nc, method='mclust',
-                                   use_pca=True)
-                        prediction = data_omics1.obs['mmvaeplus']
+                        clustering(data_omics1, key=key, add_key=key, n_clusters=nc, method='mclust', use_pca=True)
+                        prediction = data_omics1.obs[key]
+                        if 'cluster' in data_omics1.obs.columns:
+                            ari = adjusted_rand_score(data_omics1.obs['cluster'], prediction)
+                            mi = mutual_info_score(data_omics1.obs['cluster'], prediction)
+                            nmi = normalized_mutual_info_score(data_omics1.obs['cluster'], prediction)
+                            ami = adjusted_mutual_info_score(data_omics1.obs['cluster'], prediction)
+                            hom = homogeneity_score(data_omics1.obs['cluster'], prediction)
+                            vme = v_measure_score(data_omics1.obs['cluster'], prediction)
 
-                        ari = adjusted_rand_score(data_omics1.obs['cluster'], prediction)
-                        mi = mutual_info_score(data_omics1.obs['cluster'], prediction)
-                        nmi = normalized_mutual_info_score(data_omics1.obs['cluster'], prediction)
-                        ami = adjusted_mutual_info_score(data_omics1.obs['cluster'], prediction)
-                        hom = homogeneity_score(data_omics1.obs['cluster'], prediction)
-                        vme = v_measure_score(data_omics1.obs['cluster'], prediction)
-
-                        ave_score = (ari + mi + nmi + ami + hom + vme) / 6
-                        print("number of clusters: " + str(nc))
-                        print("ARI: " + str(ari))
-                        print('Average score is: ' + str(ave_score))
+                            ave_score = (ari + mi + nmi + ami + hom + vme) / 6
+                            print("number of clusters: " + str(nc))
+                            print("ARI: " + str(ari))
+                            print('Average score is: ' + str(ave_score))
+                        else:
+                            ari = mi = nmi = ami = hom = vme = ave_score = np.nan
                         if plot_result:
                             fig, ax = plt.subplots(1, 2, figsize=(16, 8))
-                            scanpy.pl.spatial(data_omics1, color='ground_truth', ax=ax[0], spot_size=np.sqrt(2),
-                                              show=False)
-                            scanpy.pl.spatial(data_omics1, color='mmvaeplus', ax=ax[1], spot_size=np.sqrt(2),
-                                              title='mmvaeplus\n ari: ' + str(ari), show=False)
+                            sc.pl.spatial(data_omics1, color='ground_truth', ax=ax[0], spot_size=np.sqrt(2), show=False)
+                            sc.pl.spatial(data_omics1, color='mmvaeplus', ax=ax[1], spot_size=np.sqrt(2),
+                                          title='mmvaeplus\n ari: ' + str(ari), show=False)
                             plt.tight_layout()
                             plt.show()
+
+                        moranI = moranI_score(data_omics1, key)
 
                         if result_path is not None:
                             while True:
@@ -141,10 +147,9 @@ class MMVAEPLUS:
                                 except:
                                     pass
                             result.loc[len(result.index)] = [dataset, self.learning_rate, self.zs_dim, self.zp_dim,
-                                                             self.hidden_dim1, self.hidden_dim2, self.weight_omics2,
-                                                             self.weight_kl, self.n_neighbors, self.recon_type,
+                                                             self.hidden_dim1, self.hidden_dim2, self.weight_kl,
                                                              self.heads, epoch + 1, nc, ari, mi, nmi, ami, hom, vme,
-                                                             ave_score]
+                                                             ave_score, moranI, jaccard1, jaccard2, jaccard1 + jaccard2]
                             result.to_csv(result_path, index=False)
                             print(datetime.now())
                             print(result.tail(1).to_string())
@@ -197,3 +202,23 @@ class MMVAEPLUS:
             torch.Size([1]))[0, :, :]
         return {'data_srt_hat': data_srt_hat, 'data_spr_cross_hat': data_spr_cross_hat, 'data_spr_hat': data_spr_hat,
                 'data_srt_cross_hat': data_srt_cross_hat}
+
+
+def moranI_score(adata, key):
+    g = kneighbors_graph(adata.obsm['spatial'], 6, mode='connectivity', metric='euclidean')
+    one_hot = get_dummies(adata.obs[key])
+    moranI = sc.metrics.morans_i(g, one_hot.values.T).mean()
+    return moranI
+
+
+def calculate_jaccard(adata, adata_omics1, adata_omics2, key, k=50):
+    sc.pp.neighbors(adata, use_rep=key, key_added=key, n_neighbors=k)
+    sc.pp.neighbors(adata_omics1, use_rep='X_pca', key_added='X_pca', n_neighbors=k)
+    sc.pp.neighbors(adata_omics2, use_rep='X_pca', key_added='X_pca', n_neighbors=k)
+    jaccard1 = ((adata.obsp[key + '_distances'].toarray() * adata_omics1.obsp['X_pca_distances'].toarray() > 0).sum(
+        1) / (adata.obsp[key + '_distances'].toarray() + adata_omics1.obsp['X_pca_distances'].toarray() > 0).sum(
+        1)).mean()
+    jaccard2 = ((adata.obsp[key + '_distances'].toarray() * adata_omics2.obsp['X_pca_distances'].toarray() > 0).sum(
+        1) / (adata.obsp[key + '_distances'].toarray() + adata_omics2.obsp['X_pca_distances'].toarray() > 0).sum(
+        1)).mean()
+    return jaccard1, jaccard2

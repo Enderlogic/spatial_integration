@@ -89,7 +89,7 @@ def clr_normalize_each_cell(adata, inplace=True):
     
     # apply to dense or sparse matrix, along axis. returns dense matrix
     adata.X = np.apply_along_axis(
-        seurat_clr, 1, (adata.X.A if scipy.sparse.issparse(adata.X) else np.array(adata.X))
+        seurat_clr, 1, (adata.X.toarray() if scipy.sparse.issparse(adata.X) else np.array(adata.X))
     )
     return adata     
 

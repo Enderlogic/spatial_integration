@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SshConfigs">
+    <configs>
+      <sshConfig authType="PASSWORD" host="gpuhome.comp.hkbu.edu.hk" id="d7d63382-521f-4837-b9ec-c572fe8b34f4" port="22" nameFormat="DESCRIPTIVE" username="yangliu1214" useOpenSSHConfig="true" />
+    </configs>
+  </component>
+</project>

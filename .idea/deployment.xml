@@ -1,12 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
+  <component name="PublishConfigData" serverName="gpuhome" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
     <option name="confirmBeforeUploading" value="false" />
     <serverData>
+      <paths name="csr69">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="gpuhome">
         <serverdata>
           <mappings>
             <mapping deploy="/spatial_integration" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="yangliu1214@csr69.comp.hkbu.edu.hk:22 password">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/comp/yangliu1214/spatial_integration" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="yangliu1214@csr69.comp.hkbu.edu.hk:22 password (2)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/comp/yangliu1214/spatial_integration" local="$PROJECT_DIR$" />
           </mappings>
         </serverdata>
       </paths>

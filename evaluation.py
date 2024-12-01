@@ -33,7 +33,7 @@ default_hyper = {
     "n_top_genes": 3000,  # number of highly variable genes
     "sc_included": False,  # whether to use scRNA-seq to guide spatial multiomics integration
     "tool": 'mclust',  # mclust, leiden, and louvain
-    "dataset": 'human_lymph_node',  # this is the only dataset with human annotation
+    "dataset": 'human_lymph_node_rep1',  # this is the only dataset with human annotation
     "spot_num": 50000,  # the number of spots in pseudo SRT data
     "latent_dim": 32,
     "hidden_dim_1": 256,
@@ -68,7 +68,7 @@ adata_pro.var_names_make_unique()
 adata_scrna = sc.read('Dataset/' + dataset + '/adata_scrna.h5ad',
                       backup_url='https://cell2location.cog.sanger.ac.uk/paper/integrated_lymphoid_organ_scrna/RegressionNBV4Torch_57covariates_73260cells_10237genes/sc.h5ad')
 adata_scrna.obs['celltype'] = adata_scrna.obs['Subset']
-ground_truth = pd.read_csv('Dataset/' + dataset + '/annotation.csv') if dataset == 'human_lymph_node' else None
+ground_truth = pd.read_csv('Dataset/' + dataset + '/annotation.csv') if dataset == 'human_lymph_node_rep1' else None
 
 # preprocss ST data
 common_genes = [g for g in adata_srt.var_names if g in adata_scrna.var_names]
@@ -76,7 +76,7 @@ adata_srt = adata_srt[:, common_genes]
 adata_srt = ST_preprocess(adata_srt, n_top_genes=n_top_genes)
 if sc_included:
     # generate pseudo SRT data
-    adata_pse_srt_path = 'Dataset/human_lymph_node/adata_pse_srt_' + str(spot_num) + '_' + str(lam) + '_' + str(
+    adata_pse_srt_path = 'Dataset/human_lymph_node_rep1/adata_pse_srt_' + str(spot_num) + '_' + str(lam) + '_' + str(
         max_cell_types_in_spot) + '.h5ad'
     if not os.path.exists(adata_pse_srt_path):
         adata_pse_srt = pse_srt_from_scrna(adata_scrna, spot_num=spot_num, lam=lam,
